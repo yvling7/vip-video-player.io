@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>视频播放器</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; }
+        #dplayer {
+            width: 100%;
+            height: 100%;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="dplayer"></div>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js/dist/hls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.js"></script>
+    <script>
+        // 获取URL参数中的视频地址
+        const urlParams = new URLSearchParams(window.location.search);
+        const videoUrl = urlParams.get('url');
+        
+        // 创建DPlayer实例
+        const dp = new DPlayer({
+            container: document.getElementById('dplayer'),
+            video: {
+                url: videoUrl,
+                type: 'auto',
+                customType: {
+                    hls: function(video, player) {
+                        const hls = new Hls();
+                        hls.loadSource(video.src);
+                        hls.attachMedia(video);
+                    }
+                }
+            },
+            autoplay: true,
+            theme: '#1c84c6',
+            lang: 'zh-cn',
+            hotkey: true,
+            preload: 'auto',
+            volume: 0.7,
+            contextmenu: [
+                {
+                    text: 'VIP视频解析播放器',
+                    link: 'https://github.com/你的项目地址'
+                }
+            ]
+        });
+    </script>
+</body>
+</html>
