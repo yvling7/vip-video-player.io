@@ -50,7 +50,33 @@
                     return;
                 }
 
-                this.createPlayer(apiUrl + videoUrl);
+                // 创建隐藏的iframe
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = apiUrl + videoUrl;
+                document.body.appendChild(iframe);
+
+                // 监听iframe加载完成
+                iframe.onload = () => {
+                    try {
+                        // 从iframe中获取video元素
+                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                        const videoElement = iframeDoc.querySelector('video');
+                        
+                        if (videoElement && videoElement.src) {
+                            // 获取到视频地址，创建DPlayer
+                            this.createPlayer(videoElement.src);
+                            // 移除iframe
+                            iframe.remove();
+                        } else {
+                            throw new Error('未找到视频元素');
+                        }
+                    } catch (error) {
+                        console.error('解析失败:', error);
+                        this.showError('解析失败，请返回重试');
+                        iframe.remove();
+                    }
+                };
             }
 
             createPlayer(url) {
