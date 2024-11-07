@@ -36,94 +36,140 @@
     <script>
         // 显示加载提示
         document.querySelector('.loading').style.display = 'block';
+        document.querySelector('.loading').textContent = '正在解析视频地址...';
         
-        // 获取URL参数中的视频地址
+        // 获取URL参数
         const urlParams = new URLSearchParams(window.location.search);
-        const videoUrl = urlParams.get('url');
+        const apiUrl = urlParams.get('api');
+        const videoUrl = urlParams.get('video');
         
-        if (!videoUrl) {
-            alert('未找到视频地址');
-            document.querySelector('.loading').textContent = '未找到视频地址';
-            throw new Error('No video URL provided');
+        if (!apiUrl || !videoUrl) {
+            document.querySelector('.loading').textContent = '参数错误';
+            throw new Error('Missing parameters');
         }
 
-        // 创建DPlayer实例
-        const dp = new DPlayer({
-            container: document.getElementById('dplayer'),
-            video: {
-                url: videoUrl,
-                type: videoUrl.includes('.m3u8') ? 'hls' : 'auto',
-                customType: {
-                    hls: function(video, player) {
-                        const hls = new Hls({
-                            debug: false,
-                            // p2pConfig: {
-                            //     live: false,
-                            // },
-                            maxBufferLength: 60 * 2,
-                            maxMaxBufferLength: 60 * 2,
-                        });
-                        hls.loadSource(video.src);
-                        hls.attachMedia(video);
-                        hls.on(Hls.Events.ERROR, function (event, data) {
-                            if (data.fatal) {
-                                switch(data.type) {
-                                    case Hls.ErrorTypes.NETWORK_ERROR:
-                                        console.log("网络错误");
-                                        hls.startLoad();
-                                        break;
-                                    case Hls.ErrorTypes.MEDIA_ERROR:
-                                        console.log("媒体错误");
-                                        hls.recoverMediaError();
-                                        break;
-                                    default:
-                                        hls.destroy();
-                                        break;
-                                }
-                            }
-                        });
+        // 获取视频真实地址
+        async function getVideoUrl() {
+            try {
+                const response = await fetch(apiUrl + videoUrl);
+                const html = await response.text();
+                
+                // 视频地址匹配模式
+                const patterns = [
+                    /"url"\s*:\s*"([^"]+)"/i,
+                    /player_data\s*=\s*{[^}]*"url"\s*:\s*"([^"]+)"/i,
+                    /\"playurl\"\s*:\s*\"([^\"]+)\"/i,
+                    /[\'"](https?:\/\/[^\'"]+?\.m3u8[^\'"]*)['"]/i,
+                    /(https?:\/\/[^\"\']+?\.m3u8[^\"\'\s]*)/i,
+                    /[\'"](https?:\/\/[^\'"]+?\.mp4[^\'"]*)['"]/i,
+                    /(https?:\/\/[^\"\']+?\.mp4[^\"\'\s]*)/i,
+                    /source\s*[=:]\s*['"]([^'"]+)['"]/i,
+                    /video\s*[=:]\s*['"]([^'"]+)['"]/i,
+                    /url\s*[=:]\s*['"]([^'"]+)['"]/i
+                ];
+
+                for (let pattern of patterns) {
+                    const match = html.match(pattern);
+                    if (match) {
+                        let url = decodeURIComponent(match[1]);
+                        
+                        if (url.startsWith('//')) {
+                            url = 'https:' + url;
+                        }
+                        
+                        if (url.startsWith('http')) {
+                            createPlayer(url);
+                            return;
+                        }
                     }
                 }
-            },
-            autoplay: true,
-            theme: '#1c84c6',
-            lang: 'zh-cn',
-            hotkey: true,
-            preload: 'auto',
-            volume: 0.7,
-            mutex: true,
-            screenshot: true,
-            playbackSpeed: [0.5, 0.75, 1, 1.25, 1.5, 2],
-            contextmenu: [
-                {
-                    text: 'VIP视频解析播放器',
-                    link: 'https://github.com/yvling7/vip-video-player.io'
-                }
-            ]
-        });
-
-        // 事件监听
-        dp.on('loadstart', () => {
-            document.querySelector('.loading').style.display = 'none';
-        });
-
-        dp.on('error', () => {
-            document.querySelector('.loading').textContent = '视频加载失败，请返回重试';
-        });
-
-        dp.on('loadeddata', () => {
-            document.querySelector('.loading').style.display = 'none';
-        });
-
-        // 记忆播放进度
-        const savedTime = localStorage.getItem('dplayer-time-' + videoUrl);
-        if (savedTime) {
-            dp.seek(parseFloat(savedTime));
+                
+                document.querySelector('.loading').textContent = '未找到视频地址';
+                throw new Error('Video URL not found');
+                
+            } catch (error) {
+                console.error('解析失败:', error);
+                document.querySelector('.loading').textContent = '解析失败，请返回重试';
+            }
         }
 
-        dp.on('timeupdate', () => {
-            localStorage.setItem('dplayer-time-' + videoUrl, dp.video.currentTime);
-        });
+        // 创建播放器
+        function createPlayer(url) {
+            const dp = new DPlayer({
+                container: document.getElementById('dplayer'),
+                video: {
+                    url: url,
+                    type: url.includes('.m3u8') ? 'hls' : 'auto',
+                    customType: {
+                        hls: function(video, player) {
+                            const hls = new Hls({
+                                debug: false,
+                                maxBufferLength: 60 * 2,
+                                maxMaxBufferLength: 60 * 2,
+                            });
+                            hls.loadSource(video.src);
+                            hls.attachMedia(video);
+                            hls.on(Hls.Events.ERROR, function (event, data) {
+                                if (data.fatal) {
+                                    switch(data.type) {
+                                        case Hls.ErrorTypes.NETWORK_ERROR:
+                                            hls.startLoad();
+                                            break;
+                                        case Hls.ErrorTypes.MEDIA_ERROR:
+                                            hls.recoverMediaError();
+                                            break;
+                                        default:
+                                            hls.destroy();
+                                            break;
+                                    }
+                                }
+                            });
+                        }
+                    }
+                },
+                autoplay: true,
+                theme: '#1c84c6',
+                lang: 'zh-cn',
+                hotkey: true,
+                preload: 'auto',
+                volume: 0.7,
+                mutex: true,
+                screenshot: true,
+                playbackSpeed: [0.5, 0.75, 1, 1.25, 1.5, 2],
+                contextmenu: [
+                    {
+                        text: 'VIP视频解析播放器',
+                        link: 'https://github.com/yvling7/vip-video-player.io'
+                    }
+                ]
+            });
+
+            // 事件监听
+            dp.on('loadstart', () => {
+                document.querySelector('.loading').style.display = 'none';
+            });
+
+            dp.on('error', () => {
+                document.querySelector('.loading').textContent = '视频加载失败，请返回重试';
+            });
+
+            dp.on('loadeddata', () => {
+                document.querySelector('.loading').style.display = 'none';
+            });
+
+            // 记忆播放进度
+            const savedTime = localStorage.getItem('dplayer-time-' + url);
+            if (savedTime) {
+                dp.seek(parseFloat(savedTime));
+            }
+
+            dp.on('timeupdate', () => {
+                localStorage.setItem('dplayer-time-' + url, dp.video.currentTime);
+            });
+        }
+
+        // 开始解析
+        getVideoUrl();
 
         // 快捷键
         document.addEventListener('keydown', (e) => {
