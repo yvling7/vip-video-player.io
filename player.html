@@ -12,10 +12,15 @@
             background: #000;
             overflow: hidden;
         }
+        #player-container {
+            width: 100%;
+            height: 100vh;
+            border: none;
+        }
         #dplayer {
             width: 100%;
             height: 100vh;
-            background: #000;
+            display: none;
         }
         .loading {
             position: fixed;
@@ -30,171 +35,113 @@
 </head>
 <body>
     <div class="loading">加载中...</div>
+    <iframe id="player-container"></iframe>
     <div id="dplayer"></div>
     
     <script src="https://cdn.jsdelivr.net/npm/hls.js/dist/hls.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.js"></script>
     <script>
-        class VideoPlayer {
-            constructor() {
-                this.init();
-            }
-
-            init() {
-                const urlParams = new URLSearchParams(window.location.search);
-                const apiUrl = urlParams.get('api');
-                const videoUrl = urlParams.get('video');
-                
-                if (!apiUrl || !videoUrl) {
-                    this.showError('参数错误');
-                    return;
-                }
-
-                // 创建隐藏的iframe
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.src = apiUrl + videoUrl;
-                document.body.appendChild(iframe);
-
-                // 监听iframe加载完成
-                iframe.onload = () => {
-                    try {
-                        // 从iframe中获取video元素
-                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                        const videoElement = iframeDoc.querySelector('video');
-                        
-                        if (videoElement && videoElement.src) {
-                            // 获取到视频地址，创建DPlayer
-                            this.createPlayer(videoElement.src);
-                            // 移除iframe
-                            iframe.remove();
-                        } else {
-                            throw new Error('未找到视频元素');
-                        }
-                    } catch (error) {
-                        console.error('解析失败:', error);
-                        this.showError('解析失败，请返回重试');
-                        iframe.remove();
-                    }
-                };
-            }
-
-            createPlayer(url) {
-                const dp = new DPlayer({
-                    container: document.getElementById('dplayer'),
-                    video: {
-                        url: url,
-                        type: 'auto',
-                        customType: {
-                            hls: (video, player) => {
-                                const hls = new Hls({
-                                    debug: false,
-                                    maxBufferLength: 30 * 2 * 10,
-                                    maxMaxBufferLength: 30 * 2 * 10,
-                                });
-                                hls.loadSource(video.src);
-                                hls.attachMedia(video);
-                                hls.on(Hls.Events.ERROR, (event, data) => {
-                                    this.handleHlsError(hls, player, data);
-                                });
-                            }
-                        }
-                    },
-                    subtitle: {
-                        url: '',
-                        type: 'webvtt',
-                        fontSize: '5vh',
-                        bottom: '10%',
-                        color: '#fff'
-                    },
-                    autoplay: true,
-                    theme: '#b7daff',
-                    lang: 'zh-cn',
-                    hotkey: true,
-                    preload: 'auto',
-                    volume: 1.0,
-                    mutex: true,
-                    screenshot: true,
-                    airplay: true,
-                    playbackSpeed: [0.5, 0.75, 1, 1.25, 1.5, 2, 3],
-                    contextmenu: [
-                        {
-                            text: 'VIP视频解析播放器',
-                            link: 'https://github.com/yvling7/vip-video-player.io'
-                        }
-                    ]
-                });
-
-                this.enhancePlayer(dp);
-                this.hideLoading();
-            }
-
-            handleHlsError(hls, player, data) {
-                if (!data.fatal) return;
-
-                switch(data.type) {
-                    case Hls.ErrorTypes.NETWORK_ERROR:
-                        if (data.details === "manifestLoadError") {
-                            const errno = JSON.parse(data.networkDetails.response).errno;
-                            if (errno === 31341) {
-                                hls.loadSource(hls.url);
-                                player.notice('正在重试加载视频...');
-                            } else {
-                                player.notice('视频加载失败，请刷新页面重试');
-                            }
-                        } else {
-                            hls.startLoad();
-                            player.notice('网络错误，正在重试...');
-                        }
-                        break;
-                    case Hls.ErrorTypes.MEDIA_ERROR:
-                        hls.recoverMediaError();
-                        player.notice('视频解码错误，正在恢复...');
-                        break;
-                    default:
-                        hls.destroy();
-                        player.notice('播放器遇到错误，请刷新页面');
-                        break;
-                }
-            }
-
-            enhancePlayer(player) {
-                // 记忆播放进度
-                const videoUrl = new URLSearchParams(window.location.search).get('video');
-                const savedTime = localStorage.getItem('dplayer-time-' + videoUrl);
-                if (savedTime) {
-                    player.seek(parseFloat(savedTime));
-                }
-
-                player.on('timeupdate', () => {
-                    localStorage.setItem('dplayer-time-' + videoUrl, player.video.currentTime);
-                });
-
-                // 错误处理
-                player.on('error', () => {
-                    player.notice('视频加载失败，正在重试...');
-                    setTimeout(() => {
-                        player.reload();
-                    }, 1000);
-                });
-
-                // 加载完成
-                player.on('loadeddata', () => {
-                    this.hideLoading();
-                });
-            }
-
-            showError(msg) {
-                document.querySelector('.loading').textContent = msg;
-            }
-
-            hideLoading() {
-                document.querySelector('.loading').style.display = 'none';
-            }
+        // 获取URL参数
+        const urlParams = new URLSearchParams(window.location.search);
+        const videoUrl = urlParams.get('video');
+        
+        if (!videoUrl) {
+            document.querySelector('.loading').textContent = '参数错误';
+            throw new Error('Missing parameters');
         }
 
-        // 初始化播放器
-        new VideoPlayer();
+        // 先加载xmflv解析
+        const iframe = document.getElementById('player-container');
+        iframe.src = 'https://jx.xmflv.com/?url=' + videoUrl;
+        
+        // 监听iframe加载完成
+        iframe.onload = function() {
+            document.querySelector('.loading').textContent = '正在获取视频地址...';
+            
+            // 等待一段时间让视频加载
+            setTimeout(() => {
+                try {
+                    // 从iframe中获取视频地址
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    const videoElement = iframeDoc.querySelector('video');
+                    
+                    if (videoElement && videoElement.src) {
+                        // 获取到视频地址，创建DPlayer
+                        createDPlayer(videoElement.src);
+                    } else {
+                        // 如果没找到视频元素，继续使用iframe播放
+                        document.querySelector('.loading').style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('获取视频地址失败:', error);
+                    document.querySelector('.loading').style.display = 'none';
+                }
+            }, 2000); // 等待2秒
+        };
+
+        // 创建DPlayer
+        function createDPlayer(url) {
+            const dp = new DPlayer({
+                container: document.getElementById('dplayer'),
+                video: {
+                    url: url,
+                    type: url.includes('.m3u8') ? 'hls' : 'auto',
+                    customType: {
+                        hls: function(video, player) {
+                            const hls = new Hls({
+                                debug: false,
+                                maxBufferLength: 60 * 2,
+                                maxMaxBufferLength: 60 * 2,
+                            });
+                            hls.loadSource(video.src);
+                            hls.attachMedia(video);
+                            hls.on(Hls.Events.ERROR, function (event, data) {
+                                if (data.fatal) {
+                                    switch(data.type) {
+                                        case Hls.ErrorTypes.NETWORK_ERROR:
+                                            hls.startLoad();
+                                            break;
+                                        case Hls.ErrorTypes.MEDIA_ERROR:
+                                            hls.recoverMediaError();
+                                            break;
+                                        default:
+                                            hls.destroy();
+                                            break;
+                                    }
+                                }
+                            });
+                        }
+                    }
+                },
+                autoplay: true,
+                theme: '#1c84c6',
+                lang: 'zh-cn',
+                hotkey: true,
+                preload: 'auto',
+                volume: 0.7,
+                mutex: true,
+                screenshot: true,
+                playbackSpeed: [0.5, 0.75, 1, 1.25, 1.5, 2],
+                contextmenu: [
+                    {
+                        text: 'VIP视频解析播放器',
+                        link: 'https://github.com/yvling7/vip-video-player.io'
+                    }
+                ]
+            });
+
+            // 播放器创建成功，切换显示
+            document.getElementById('player-container').style.display = 'none';
+            document.getElementById('dplayer').style.display = 'block';
+            document.querySelector('.loading').style.display = 'none';
+
+            // 播放器事件
+            dp.on('error', () => {
+                // 如果DPlayer播放失败，回退到iframe播放
+                document.getElementById('player-container').style.display = 'block';
+                document.getElementById('dplayer').style.display = 'none';
+            });
+        }
     </script>
 </body>
 </html>
