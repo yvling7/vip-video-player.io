@@ -24,33 +24,10 @@
             font-size: 16px;
             z-index: 9999;
         }
-        .error-msg {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            font-size: 16px;
-            text-align: center;
-            display: none;
-        }
-        .error-msg button {
-            margin-top: 10px;
-            padding: 5px 15px;
-            border: none;
-            background: #1c84c6;
-            color: white;
-            border-radius: 4px;
-            cursor: pointer;
-        }
     </style>
 </head>
 <body>
     <div class="loading">正在解析视频...</div>
-    <div class="error-msg">
-        <div>解析失败</div>
-        <button onclick="retryParse()">重试</button>
-    </div>
     <div id="dplayer"></div>
     
     <script src="https://cdn.jsdelivr.net/npm/hls.js/dist/hls.min.js"></script>
@@ -58,156 +35,136 @@
     <script>
         // 获取URL参数
         const urlParams = new URLSearchParams(window.location.search);
+        const apiUrl = urlParams.get('api');
         const videoUrl = urlParams.get('video');
         
-        if (!videoUrl) {
-            showError('视频地址不存在');
-            throw new Error('Missing video URL');
+        if (!apiUrl || !videoUrl) {
+            document.querySelector('.loading').textContent = '参数错误';
+            throw new Error('Missing parameters');
         }
 
-        // 视频解析器
-        class VideoParser {
-            constructor(url) {
-                this.videoUrl = url;
-                this.retryCount = 0;
-                this.maxRetries = 3;
-            }
+        // 从解析接口获取视频地址
+        async function getVideoUrl() {
+            try {
+                const response = await fetch(apiUrl + videoUrl);
+                const html = await response.text();
+                
+                // 使用与video-parser.user.js相同的匹配模式
+                const patterns = [
+                    /"url"\s*:\s*"([^"]+)"/i,
+                    /player_data\s*=\s*{[^}]*"url"\s*:\s*"([^"]+)"/i,
+                    /\"playurl\"\s*:\s*\"([^\"]+)\"/i,
+                    /[\'"](https?:\/\/[^\'"]+?\.m3u8[^\'"]*)['"]/i,
+                    /(https?:\/\/[^\"\']+?\.m3u8[^\"\'\s]*)/i,
+                    /[\'"](https?:\/\/[^\'"]+?\.mp4[^\'"]*)['"]/i,
+                    /(https?:\/\/[^\"\']+?\.mp4[^\"\'\s]*)/i,
+                    /source\s*[=:]\s*['"]([^'"]+)['"]/i,
+                    /video\s*[=:]\s*['"]([^'"]+)['"]/i,
+                    /url\s*[=:]\s*['"]([^'"]+)['"]/i
+                ];
 
-            // 解析视频
-            async parse() {
-                try {
-                    // 获取视频信息
-                    const videoInfo = await this.getVideoInfo();
-                    
-                    // 获取播放地址
-                    const playUrl = await this.getPlayUrl(videoInfo);
-                    
-                    // 创建播放器
-                    this.createPlayer(playUrl);
-                    
-                } catch (error) {
-                    console.error('解析失败:', error);
-                    if (this.retryCount < this.maxRetries) {
-                        this.retryCount++;
-                        await this.parse();
-                    } else {
-                        showError('解析失败，请重试');
+                for (let pattern of patterns) {
+                    const match = html.match(pattern);
+                    if (match) {
+                        let url = decodeURIComponent(match[1]);
+                        
+                        if (url.startsWith('//')) {
+                            url = 'https:' + url;
+                        }
+                        
+                        if (url.startsWith('http')) {
+                            return url;
+                        }
                     }
                 }
-            }
-
-            // 获取视频信息
-            async getVideoInfo() {
-                // 根据不同网站实现不同的解析逻辑
-                if (this.videoUrl.includes('iqiyi.com')) {
-                    return this.parseIqiyi();
-                } else if (this.videoUrl.includes('v.qq.com')) {
-                    return this.parseQQ();
-                }
-                // 添加其他网站的解析...
                 
-                throw new Error('不支持的视频网站');
+                throw new Error('未找到视频地址');
+            } catch (error) {
+                console.error('获取视频地址失败:', error);
+                document.querySelector('.loading').textContent = '解析失败，请返回重试';
+                throw error;
             }
+        }
 
-            // 爱奇艺解析示例
-            async parseIqiyi() {
-                const tvid = this.videoUrl.match(/v_(\w+)/)[1];
-                const apiUrl = `https://pcw-api.iqiyi.com/video/video/baseinfo/${tvid}`;
-                
-                const response = await fetch(apiUrl);
-                const data = await response.json();
-                
-                return {
-                    tvid: tvid,
-                    vid: data.data.vid,
-                    title: data.data.name
-                };
-            }
-
-            // 腾讯视频解析示例
-            async parseQQ() {
-                // 实现腾讯视频的解析逻辑
-            }
-
-            // 获取播放地址
-            async getPlayUrl(videoInfo) {
-                // 根据视频信息获取真实播放地址
-                // 这里需要实现具体的解密和签名逻辑
-            }
-
-            // 创建播放器
-            createPlayer(url) {
-                const dp = new DPlayer({
-                    container: document.getElementById('dplayer'),
-                    video: {
-                        url: url,
-                        type: url.includes('.m3u8') ? 'hls' : 'auto',
-                        customType: {
-                            hls: function(video, player) {
-                                const hls = new Hls({
-                                    debug: false,
-                                    maxBufferLength: 60 * 2,
-                                });
-                                hls.loadSource(video.src);
-                                hls.attachMedia(video);
-                                hls.on(Hls.Events.ERROR, handleHlsError);
-                            }
+        // 创建DPlayer播放器
+        function createPlayer(url) {
+            const dp = new DPlayer({
+                container: document.getElementById('dplayer'),
+                video: {
+                    url: url,
+                    type: url.includes('.m3u8') ? 'hls' : 'auto',
+                    customType: {
+                        hls: function(video, player) {
+                            const hls = new Hls({
+                                debug: false,
+                                maxBufferLength: 60 * 2,
+                                maxMaxBufferLength: 60 * 2,
+                            });
+                            hls.loadSource(video.src);
+                            hls.attachMedia(video);
+                            hls.on(Hls.Events.ERROR, function (event, data) {
+                                if (data.fatal) {
+                                    switch(data.type) {
+                                        case Hls.ErrorTypes.NETWORK_ERROR:
+                                            hls.startLoad();
+                                            break;
+                                        case Hls.ErrorTypes.MEDIA_ERROR:
+                                            hls.recoverMediaError();
+                                            break;
+                                        default:
+                                            hls.destroy();
+                                            break;
+                                    }
+                                }
+                            });
                         }
-                    },
-                    autoplay: true,
-                    theme: '#1c84c6',
-                    lang: 'zh-cn',
-                    hotkey: true,
-                    preload: 'auto',
-                    volume: 0.7,
-                    mutex: true,
-                    screenshot: true,
-                    playbackSpeed: [0.5, 0.75, 1, 1.25, 1.5, 2]
-                });
+                    }
+                },
+                autoplay: true,
+                theme: '#1c84c6',
+                lang: 'zh-cn',
+                hotkey: true,
+                preload: 'auto',
+                volume: 0.7,
+                mutex: true,
+                screenshot: true,
+                playbackSpeed: [0.5, 0.75, 1, 1.25, 1.5, 2],
+                contextmenu: [
+                    {
+                        text: 'VIP视频解析播放器',
+                        link: 'https://github.com/yvling7/vip-video-player.io'
+                    }
+                ]
+            });
 
-                hideLoading();
-                
-                dp.on('error', () => {
-                    showError('播放失败，请重试');
-                });
+            document.querySelector('.loading').style.display = 'none';
+
+            // 记忆播放进度
+            const savedTime = localStorage.getItem('dplayer-time-' + videoUrl);
+            if (savedTime) {
+                dp.seek(parseFloat(savedTime));
+            }
+
+            dp.on('timeupdate', () => {
+                localStorage.setItem('dplayer-time-' + videoUrl, dp.video.currentTime);
+            });
+
+            dp.on('error', () => {
+                document.querySelector('.loading').textContent = '播放失败，请返回重试';
+            });
+        }
+
+        // 开始解析和播放
+        async function init() {
+            try {
+                const url = await getVideoUrl();
+                createPlayer(url);
+            } catch (error) {
+                console.error('初始化失败:', error);
             }
         }
 
-        // 工具函数
-        function showError(msg) {
-            document.querySelector('.loading').style.display = 'none';
-            document.querySelector('.error-msg').style.display = 'block';
-            document.querySelector('.error-msg div').textContent = msg;
-        }
-
-        function hideLoading() {
-            document.querySelector('.loading').style.display = 'none';
-        }
-
-        function handleHlsError(event, data) {
-            if (data.fatal) {
-                switch(data.type) {
-                    case Hls.ErrorTypes.NETWORK_ERROR:
-                        hls.startLoad();
-                        break;
-                    case Hls.ErrorTypes.MEDIA_ERROR:
-                        hls.recoverMediaError();
-                        break;
-                    default:
-                        hls.destroy();
-                        break;
-                }
-            }
-        }
-
-        function retryParse() {
-            document.querySelector('.error-msg').style.display = 'none';
-            document.querySelector('.loading').style.display = 'block';
-            new VideoParser(videoUrl).parse();
-        }
-
-        // 开始解析
-        new VideoParser(videoUrl).parse();
+        init();
     </script>
 </body>
 </html>
