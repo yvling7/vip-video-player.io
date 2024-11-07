@@ -36,7 +36,7 @@
     <script>
         // 显示加载提示
         document.querySelector('.loading').style.display = 'block';
-        document.querySelector('.loading').textContent = '正在解析视频地址...';
+        document.querySelector('.loading').textContent = '正在解析视频地��...';
         
         // 获取URL参数
         const urlParams = new URLSearchParams(window.location.search);
@@ -49,48 +49,76 @@
         }
 
         // 获取视频真实地址
-        async function getVideoUrl() {
-            try {
-                const response = await fetch(apiUrl + videoUrl);
-                const html = await response.text();
-                
-                // 视频地址匹配模式
-                const patterns = [
-                    /"url"\s*:\s*"([^"]+)"/i,
-                    /player_data\s*=\s*{[^}]*"url"\s*:\s*"([^"]+)"/i,
-                    /\"playurl\"\s*:\s*\"([^\"]+)\"/i,
-                    /[\'"](https?:\/\/[^\'"]+?\.m3u8[^\'"]*)['"]/i,
-                    /(https?:\/\/[^\"\']+?\.m3u8[^\"\'\s]*)/i,
-                    /[\'"](https?:\/\/[^\'"]+?\.mp4[^\'"]*)['"]/i,
-                    /(https?:\/\/[^\"\']+?\.mp4[^\"\'\s]*)/i,
-                    /source\s*[=:]\s*['"]([^'"]+)['"]/i,
-                    /video\s*[=:]\s*['"]([^'"]+)['"]/i,
-                    /url\s*[=:]\s*['"]([^'"]+)['"]/i
-                ];
+        function getVideoUrl() {
+            // 直接打开解析接口的URL
+            const parseUrl = apiUrl + videoUrl;
+            document.querySelector('.loading').textContent = '正在打开解析页面...';
+            
+            // 创建一个隐藏的iframe来加载解析页面
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = parseUrl;
+            document.body.appendChild(iframe);
 
-                for (let pattern of patterns) {
-                    const match = html.match(pattern);
-                    if (match) {
-                        let url = decodeURIComponent(match[1]);
-                        
-                        if (url.startsWith('//')) {
-                            url = 'https:' + url;
-                        }
-                        
-                        if (url.startsWith('http')) {
-                            createPlayer(url);
-                            return;
+            // 监听iframe加载完成
+            iframe.onload = function() {
+                try {
+                    // 尝试从iframe中获取视频地址
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    const html = iframeDoc.documentElement.outerHTML;
+                    
+                    // 视频地址匹配模式
+                    const patterns = [
+                        /"url"\s*:\s*"([^"]+)"/i,
+                        /player_data\s*=\s*{[^}]*"url"\s*:\s*"([^"]+)"/i,
+                        /\"playurl\"\s*:\s*\"([^\"]+)\"/i,
+                        /[\'"](https?:\/\/[^\'"]+?\.m3u8[^\'"]*)['"]/i,
+                        /(https?:\/\/[^\"\']+?\.m3u8[^\"\'\s]*)/i,
+                        /[\'"](https?:\/\/[^\'"]+?\.mp4[^\'"]*)['"]/i,
+                        /(https?:\/\/[^\"\']+?\.mp4[^\"\'\s]*)/i,
+                        /source\s*[=:]\s*['"]([^'"]+)['"]/i,
+                        /video\s*[=:]\s*['"]([^'"]+)['"]/i,
+                        /url\s*[=:]\s*['"]([^'"]+)['"]/i
+                    ];
+
+                    for (let pattern of patterns) {
+                        const match = html.match(pattern);
+                        if (match) {
+                            let url = decodeURIComponent(match[1]);
+                            
+                            if (url.startsWith('//')) {
+                                url = 'https:' + url;
+                            }
+                            
+                            if (url.startsWith('http')) {
+                                // 移除iframe
+                                iframe.remove();
+                                // 创建播放器
+                                createPlayer(url);
+                                return;
+                            }
                         }
                     }
+                    
+                    // 如果没有找到视频地址，直接在iframe中播放
+                    iframe.style.display = 'block';
+                    iframe.style.width = '100%';
+                    iframe.style.height = '100%';
+                    iframe.style.border = 'none';
+                    document.querySelector('#dplayer').style.display = 'none';
+                    document.querySelector('.loading').style.display = 'none';
+                    
+                } catch (error) {
+                    console.error('解析失败:', error);
+                    // 如果出错，也直接显示iframe
+                    iframe.style.display = 'block';
+                    iframe.style.width = '100%';
+                    iframe.style.height = '100%';
+                    iframe.style.border = 'none';
+                    document.querySelector('#dplayer').style.display = 'none';
+                    document.querySelector('.loading').style.display = 'none';
                 }
-                
-                document.querySelector('.loading').textContent = '未找到视频地址';
-                throw new Error('Video URL not found');
-                
-            } catch (error) {
-                console.error('解析失败:', error);
-                document.querySelector('.loading').textContent = '解析失败，请返回重试';
-            }
+            };
         }
 
         // 创建播放器
